@@ -1,7 +1,9 @@
-# Write your code here :-)
 # esp32s2-test.py -- small WiFi test program for ESP32-S2 CircuitPython 6
 # taken from https://www.reddit.com/r/circuitpython/comments/ianpm8/using_wifi_when_running_on_esp32s2saola1_board/
 #
+# Extended by Tyler Smith for prometheus reporting of thermostat data
+# 
+
 import time
 import ipaddress
 import wifi
@@ -9,6 +11,8 @@ import socketpool
 import ssl
 import adafruit_requests
 import board
+import adafruit_ahtx0
+
 
 from analogio import AnalogIn
 from adafruit_httpserver import Server, Request, Response, POST
@@ -22,19 +26,19 @@ def get_on(pin):
     return get_voltage(pin) > 0.01
 
 ssid="xxxxxxxx"
-passwd="xxxxxxxx"
+passwd="xxxxxxx"
 
 basement_in = AnalogIn(board.A1)
 main_in = AnalogIn(board.A2)
 upper_in = AnalogIn(board.A3)
+
+sensor = adafruit_ahtx0.AHTx0(board.I2C())
 
 basement_on = False
 main_on = False
 upper_on = False
 
 readings = {"basement": [], "main": [], "upper": []}
-
-print('Hello World!')
 
 for network in wifi.radio.start_scanning_networks():
     print(network, network.ssid, network.channel)
@@ -45,19 +49,15 @@ print(wifi.radio.connect(ssid=ssid,password=passwd))
 # the above gives "ConnectionError: Unknown failure" if ssid/passwd is wrong
 
 print("my IP addr:", wifi.radio.ipv4_address)
-#print("my MAC addr:", wifi.radio.mac_address)
+print("my MAC addr:", wifi.radio.mac_address)
 
-
-print("pinging 192.168.0.115...")
-ip1 = ipaddress.ip_address("192.168.0.115")
+print("pinging 192.168.0.117...")
+ip1 = ipaddress.ip_address("192.168.0.117")
 print("ip1:",ip1)
 print("ping:", wifi.radio.ping(ip1))
 
-registry = CollectorRegistry(namespace='prom_express')
-metric_c = Counter('test_counter',
-                    'a test counter',
-                    labels=['source'],
-                    registry=registry)
+registry = CollectorRegistry(namespace='environment')
+
 metric_basement = Gauge('thermostat_basement_heat',
                     'a thermostat_basement_heat gauge',
                      labels=['thermostat_basement_heat'],
@@ -72,7 +72,16 @@ metric_upper = Gauge('thermostat_upper_heat',
                     'a thermostat_upper_heat gauge',
                      labels=['thermostat_upper_heat'],
                      registry=registry)
-
+                     
+metric_laundry_temperature = Gauge('temperature_laundry',
+                    'a temperature gauge in the laundry room',
+                     labels=['temperature_laundry'],
+                     registry=registry)
+                     
+metric_laundry_humidity = Gauge('humidity_laundry',
+                    'a humidity gauge in the laundry room',
+                     labels=['humidity_laundry'],
+                     registry=registry)                     
 
 router = Router()
 router.register('GET', '/metrics', registry.handler)
@@ -80,11 +89,6 @@ server = False
 
 pool = socketpool.SocketPool(wifi.radio)
 request = adafruit_requests.Session(pool, ssl.create_default_context())
-
-#server_port=8080
-
-#server = start_http_server(server_port, address=str(wifi.radio.ipv4_address), depth=8)
-
 
 print("Fetching wifitest.adafruit.com...");
 response = request.get("http://wifitest.adafruit.com/testwifi/index.html")
@@ -117,8 +121,6 @@ def base(request: Request):  # pylint: disable=unused-argument
     #  with content type text/html
     return Response(request, f"{webpage()}", content_type='text/html')
 
-
-
 @server.route("/metrics")
 def metrics(request:Request):
     resp = registry.render()
@@ -127,10 +129,6 @@ def metrics(request:Request):
         text += line + "\n"
     return Response(request, f"{text}", content_type='text/html')
 
-def webpage():
-    text = "<html><body>hello world </body></html>"
-    return text
-
 while True:
     #print("alive")
     readings["basement"].append(str(get_on(basement_in)))
@@ -138,9 +136,10 @@ while True:
     readings["upper"].append(str(get_on(upper_in)))
 
     #print(str(get_on(basement_in)) + " " + str(get_on(main_in)) + " " + str(get_on(upper_in)))
-
-
+    printLog = False
+    
     if(len(readings["basement"])) > 30:
+        printLog = True
         if str(True) in readings["basement"]:
             basement_on = True
         else:
@@ -161,9 +160,15 @@ while True:
 
     #print(str((get_voltage(analog_in1)) > 0.01) + " " + str((get_voltage(analog_in2)) > 0.01)+ " " + str((get_voltage(analog_in3)) > 0.01))
 
-    print(str(basement_on) + " " + str(main_on) + " " + str(upper_on))
+    if printLog:
+        print("Basement: " + str(basement_on) + " Main: " + str(main_on) + " Upper: " + str(upper_on))
+        print("\nTemperature: %0.1f C" % sensor.temperature)
+        print("Humidity: %0.1f %%" % sensor.relative_humidity)
 
     time.sleep(0.1)
+    
+    metric_laundry_temperature.labels('temperature_laundry').set(sensor.temperature)
+    metric_laundry_humidity.labels('humidity_laundry').set(sensor.relative_humidity)
 
     if basement_on:
         metric_basement.labels('thermostat_basement_heat').set(1)
