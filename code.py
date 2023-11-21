@@ -11,8 +11,9 @@ import socketpool
 import ssl
 import adafruit_requests
 import board
+import digitalio
 import adafruit_ahtx0
-
+import wifi_details
 
 from analogio import AnalogIn
 from adafruit_httpserver import Server, Request, Response, POST
@@ -25,14 +26,21 @@ def get_voltage(pin):
 def get_on(pin):
     return get_voltage(pin) > 0.01
 
-ssid="xxxxxxxx"
-passwd="xxxxxxx"
+ssid=wifi_details.SSID
+passwd=wifi_details.PASSWORD
 
 basement_in = AnalogIn(board.A1)
 main_in = AnalogIn(board.A2)
 upper_in = AnalogIn(board.A3)
 
 sensor = adafruit_ahtx0.AHTx0(board.I2C())
+
+basement_pin = digitalio.DigitalInOut(board.IO9)
+main_pin = digitalio.DigitalInOut(board.IO10)
+upper_in = digitalio.DigitalInOut(board.IO11)
+basement_pin.direction = digitalio.Direction.OUTPUT
+main_pin.direction = digitalio.Direction.OUTPUT
+upper_in.direction = digitalio.Direction.OUTPUT
 
 basement_on = False
 main_on = False
@@ -172,16 +180,22 @@ while True:
 
     if basement_on:
         metric_basement.labels('thermostat_basement_heat').set(1)
+        basement_pin = True
     else:
         metric_basement.labels('thermostat_basement_heat').set(0)
+        basement_pin = False
     if main_on:
         metric_main.labels('thermostat_main_heat').set(1)
+        main_pin = True
     else:
         metric_main.labels('thermostat_main_heat').set(0)
+        main_pin = False
     if upper_on:
         metric_upper.labels('thermostat_upper_heat').set(1)
+        upper_pin = True
     else:
         metric_upper.labels('thermostat_upper_heat').set(0)
+        upper_pin = False
 
     server.poll()
 
