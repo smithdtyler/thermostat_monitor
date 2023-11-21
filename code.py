@@ -8,12 +8,31 @@ import wifi
 import socketpool
 import ssl
 import adafruit_requests
+import board
+
+from analogio import AnalogIn
 from adafruit_httpserver import Server, Request, Response, POST
 from prometheus_express import start_http_server, CollectorRegistry, Counter, Gauge, Router
 
 
-ssid="network"
-passwd="password"
+def get_voltage(pin):
+    return (pin.value * 3.3) / 65536
+
+def get_on(pin):
+    return get_voltage(pin) > 0.01
+
+ssid="xxxxxxxx"
+passwd="xxxxxxxx"
+
+basement_in = AnalogIn(board.A1)
+main_in = AnalogIn(board.A2)
+upper_in = AnalogIn(board.A3)
+
+basement_on = False
+main_on = False
+upper_on = False
+
+readings = {"basement": [], "main": [], "upper": []}
 
 print('Hello World!')
 
@@ -39,10 +58,21 @@ metric_c = Counter('test_counter',
                     'a test counter',
                     labels=['source'],
                     registry=registry)
-metric_g = Gauge('test_gauge',
-                    'a test gauge',
-                     labels=['source'],
+metric_g = Gauge('thermostat_basement_heat',
+                    'a thermostat_basement_heat gauge',
+                     labels=['thermostat_basement_heat'],
                      registry=registry)
+
+metric_g = Gauge('thermostat_main_heat',
+                    'a thermostat_main_heat gauge',
+                     labels=['thermostat_main_heat'],
+                     registry=registry)
+
+metric_g = Gauge('thermostat_upper_heat',
+                    'a thermostat_upper_heat gauge',
+                     labels=['thermostat_upper_heat'],
+                     registry=registry)
+
 
 router = Router()
 router.register('GET', '/metrics', registry.handler)
@@ -103,13 +133,51 @@ def webpage():
 
 while True:
     #print("alive")
+    readings["basement"].append(str(get_on(basement_in)))
+    readings["main"].append(str(get_on(main_in)))
+    readings["upper"].append(str(get_on(upper_in)))
+
+    #print(str(get_on(basement_in)) + " " + str(get_on(main_in)) + " " + str(get_on(upper_in)))
+
+
+    if(len(readings["basement"])) > 30:
+        if str(True) in readings["basement"]:
+            basement_on = True
+        else:
+            basement_on = False
+        readings["basement"].clear()
+    if(len(readings["main"])) > 30:
+        if str(True) in readings["main"]:
+            main_on = True
+        else:
+            main_on = False
+        readings["main"].clear()
+    if(len(readings["upper"])) > 30:
+        if str(True) in readings["upper"]:
+            upper_on = True
+        else:
+            upper_on = False
+        readings["upper"].clear()
+
+    #print(str((get_voltage(analog_in1)) > 0.01) + " " + str((get_voltage(analog_in2)) > 0.01)+ " " + str((get_voltage(analog_in3)) > 0.01))
+
+    print(str(basement_on) + " " + str(main_on) + " " + str(upper_on))
+
     time.sleep(0.1)
-    
-    metric_c.labels('heartbeat').inc(1)
-    metric_c.labels('random').inc(4)
-    metric_g.labels('clock').set(time.time())
-    metric_g.labels('random').set(4)
-    
+
+    if basement_on:
+        metric_g.labels('thermostat_basement_heat').set(1)
+    else:
+        metric_g.labels('thermostat_basement_heat').set(0)
+    if main_on:
+        metric_g.labels('thermostat_main_heat').set(1)
+    else:
+        metric_g.labels('thermostat_main_heat').set(0)
+    if upper_on:
+        metric_g.labels('thermostat_upper_heat').set(1)
+    else:
+        metric_g.labels('thermostat_upper_heat').set(0)
+
     server.poll()
-    
+
 
