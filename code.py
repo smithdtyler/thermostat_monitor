@@ -58,17 +58,17 @@ metric_c = Counter('test_counter',
                     'a test counter',
                     labels=['source'],
                     registry=registry)
-metric_g = Gauge('thermostat_basement_heat',
+metric_basement = Gauge('thermostat_basement_heat',
                     'a thermostat_basement_heat gauge',
                      labels=['thermostat_basement_heat'],
                      registry=registry)
 
-metric_g = Gauge('thermostat_main_heat',
+metric_main = Gauge('thermostat_main_heat',
                     'a thermostat_main_heat gauge',
                      labels=['thermostat_main_heat'],
                      registry=registry)
 
-metric_g = Gauge('thermostat_upper_heat',
+metric_upper = Gauge('thermostat_upper_heat',
                     'a thermostat_upper_heat gauge',
                      labels=['thermostat_upper_heat'],
                      registry=registry)
@@ -166,17 +166,17 @@ while True:
     time.sleep(0.1)
 
     if basement_on:
-        metric_g.labels('thermostat_basement_heat').set(1)
+        metric_basement.labels('thermostat_basement_heat').set(1)
     else:
-        metric_g.labels('thermostat_basement_heat').set(0)
+        metric_basement.labels('thermostat_basement_heat').set(0)
     if main_on:
-        metric_g.labels('thermostat_main_heat').set(1)
+        metric_main.labels('thermostat_main_heat').set(1)
     else:
-        metric_g.labels('thermostat_main_heat').set(0)
+        metric_main.labels('thermostat_main_heat').set(0)
     if upper_on:
-        metric_g.labels('thermostat_upper_heat').set(1)
+        metric_upper.labels('thermostat_upper_heat').set(1)
     else:
-        metric_g.labels('thermostat_upper_heat').set(0)
+        metric_upper.labels('thermostat_upper_heat').set(0)
 
     server.poll()
 
