@@ -1,9 +1,3 @@
-# esp32s2-test.py -- small WiFi test program for ESP32-S2 CircuitPython 6
-# taken from https://www.reddit.com/r/circuitpython/comments/ianpm8/using_wifi_when_running_on_esp32s2saola1_board/
-#
-# Extended by Tyler Smith for prometheus reporting of thermostat data
-# 
-
 import time
 import ipaddress
 import wifi
@@ -19,7 +13,6 @@ from analogio import AnalogIn
 from adafruit_httpserver import Server, Request, Response, POST
 from prometheus_express import start_http_server, CollectorRegistry, Counter, Gauge, Router
 
-
 def get_voltage(pin):
     return (pin.value * 3.3) / 65536
 
@@ -33,18 +26,28 @@ basement_in = AnalogIn(board.A1)
 main_in = AnalogIn(board.A2)
 upper_in = AnalogIn(board.A3)
 
-sensor = adafruit_ahtx0.AHTx0(board.I2C())
+sensor = None
+try:
+    sensor = adafruit_ahtx0.AHTx0(board.I2C())
+except:
+    print("no sensor")
 
 basement_pin = digitalio.DigitalInOut(board.IO9)
 main_pin = digitalio.DigitalInOut(board.IO10)
-upper_in = digitalio.DigitalInOut(board.IO11)
+upper_pin = digitalio.DigitalInOut(board.IO11)
 basement_pin.direction = digitalio.Direction.OUTPUT
 main_pin.direction = digitalio.Direction.OUTPUT
-upper_in.direction = digitalio.Direction.OUTPUT
+upper_pin.direction = digitalio.Direction.OUTPUT
+led = digitalio.DigitalInOut(board.LED)
+led.direction = digitalio.Direction.OUTPUT
 
 basement_on = False
 main_on = False
 upper_on = False
+
+basement_pin.value = True
+main_pin.value = True
+upper_pin.value = True
 
 readings = {"basement": [], "main": [], "upper": []}
 
@@ -121,7 +124,6 @@ except OSError:
     print("restarting..")
     microcontroller.reset()
 
-
 #  route default static IP
 @server.route("/")
 def base(request: Request):  # pylint: disable=unused-argument
@@ -137,13 +139,16 @@ def metrics(request:Request):
         text += line + "\n"
     return Response(request, f"{text}", content_type='text/html')
 
+upper_pin.value = False
+main_pin.value = False
+basement_pin.value = False
+
 while True:
-    #print("alive")
+    
     readings["basement"].append(str(get_on(basement_in)))
     readings["main"].append(str(get_on(main_in)))
     readings["upper"].append(str(get_on(upper_in)))
-
-    #print(str(get_on(basement_in)) + " " + str(get_on(main_in)) + " " + str(get_on(upper_in)))
+    
     printLog = False
     
     if(len(readings["basement"])) > 30:
@@ -165,38 +170,39 @@ while True:
         else:
             upper_on = False
         readings["upper"].clear()
-
-    #print(str((get_voltage(analog_in1)) > 0.01) + " " + str((get_voltage(analog_in2)) > 0.01)+ " " + str((get_voltage(analog_in3)) > 0.01))
-
-    if printLog:
-        print("Basement: " + str(basement_on) + " Main: " + str(main_on) + " Upper: " + str(upper_on))
-        print("\nTemperature: %0.1f C" % sensor.temperature)
-        print("Humidity: %0.1f %%" % sensor.relative_humidity)
+    
+        if printLog:
+            print("Basement: " + str(basement_on) + " Main: " + str(main_on) + " Upper: " + str(upper_on))
+        if sensor:
+            print("\nTemperature: %0.1f C" % sensor.temperature)
+            print("Humidity: %0.1f %%" % sensor.relative_humidity)
+            print("Humidity: %0.1f %%" % sensor.relative_humidity)
 
     time.sleep(0.1)
     
-    metric_laundry_temperature.labels('temperature_laundry').set(sensor.temperature)
-    metric_laundry_humidity.labels('humidity_laundry').set(sensor.relative_humidity)
-
+    if sensor:
+        metric_laundry_temperature.labels('temperature_laundry').set(sensor.temperature)
+        metric_laundry_humidity.labels('humidity_laundry').set(sensor.relative_humidity)
+    
     if basement_on:
         metric_basement.labels('thermostat_basement_heat').set(1)
-        basement_pin = True
+        basement_pin.value = True
     else:
         metric_basement.labels('thermostat_basement_heat').set(0)
-        basement_pin = False
+        basement_pin.value = False
     if main_on:
         metric_main.labels('thermostat_main_heat').set(1)
-        main_pin = True
+        main_pin.value = True
     else:
         metric_main.labels('thermostat_main_heat').set(0)
-        main_pin = False
+        main_pin.value = False
     if upper_on:
         metric_upper.labels('thermostat_upper_heat').set(1)
-        upper_pin = True
+        upper_pin.value = True
     else:
         metric_upper.labels('thermostat_upper_heat').set(0)
-        upper_pin = False
+        upper_pin.value = False
 
     server.poll()
-
-
+    
+    led.value = not led.value
